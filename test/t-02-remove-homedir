@@ -8,4 +8,11 @@ test ! -d home/12345
 test ! -h link/alice
 test   -d trash/12345.0
 
+# Remove a nonexistent home and a link.
+env __NAME__='666666' hasHome='false' \
+	samba-ext-idm-adapter -D home -L link -T trash
+
+env __NAME__='666666' \
+	samba-ext-idm-adapter -d -D home -L link -T trash
+
 # EOF

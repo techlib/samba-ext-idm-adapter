@@ -1,0 +1,36 @@
+#!/bin/bash -ex
+
+env __NAME__='12345' hasHome='true' sAMAccountName='alice' \
+	samba-ext-idm-adapter -D home -L link -T trash
+
+env __NAME__='54321' hasHome='true' sAMAccountName='bob' \
+	samba-ext-idm-adapter -D home -L link -T trash
+
+# List all users by their home directories.
+samba-ext-idm-adapter -l -D home | grep -q 12345
+samba-ext-idm-adapter -l -D home | grep -q alice
+
+samba-ext-idm-adapter -l -D home | grep -q 54321
+samba-ext-idm-adapter -l -D home | grep -q bob
+
+# List just one user by their home directory.
+env __UID__=12345 samba-ext-idm-adapter -l -D home | grep -q 12345
+env __UID__=12345 samba-ext-idm-adapter -l -D home | grep -q alice
+! ( env __UID__=12345 samba-ext-idm-adapter -l -D home | grep -q 54321 )
+
+env __UID__=54321 samba-ext-idm-adapter -l -D home | grep -q 54321
+env __UID__=54321 samba-ext-idm-adapter -l -D home | grep -q bob
+! ( env __UID__=54321 samba-ext-idm-adapter -l -D home | grep -q 12345 )
+
+
+env __UID__='12345' samba-ext-idm-adapter -D home -L link -T trash -d
+env __UID__='54321' samba-ext-idm-adapter -D home -L link -T trash -d
+
+test ! -d home/12345
+test ! -d home/54321
+
+test ! -h link/alice
+test ! -h link/bob
+
+
+# EOF

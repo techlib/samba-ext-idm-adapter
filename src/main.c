@@ -22,6 +22,7 @@
 #include <sys/xattr.h>
 #include <attr/xattr.h>
 
+#include <dirent.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -79,6 +80,9 @@ int has_home = 0;
 
 inline static int is_true(const char *str)
 {
+	if (NULL == str)
+		return 0;
+
 	if (0 == strcasecmp("true", str))
 		return 1;
 
@@ -234,6 +238,13 @@ static void trash_home(void *t)
 	char *path = talloc_asprintf(t, "%s/%lu", opt_homedir, uid);
 	int i;
 
+	if (0 != access(path, F_OK)) {
+		if (ENOENT != errno)
+			error(1, errno, "%s", path);
+
+		return;
+	}
+
 	for (i = 0; /**/; i++) {
 		char *dest = talloc_asprintf(t, "%s/%lu.%i", opt_trashdir, uid, i);
 
@@ -298,9 +309,6 @@ static int do_update(void *t, int argc, char **argv)
 
 	load_env(1);
 
-	if (NULL == username)
-		error(1, 0, "Variable sAMAccountName not set.");
-
 	if (NULL == opt_homedir)
 		error(1, 0, "Please specify the --homedir option.");
 
@@ -318,6 +326,9 @@ static int do_update(void *t, int argc, char **argv)
 	}
 
 	if (has_home) {
+		if (NULL == username)
+			error(1, 0, "Variable sAMAccountName not set.");
+
 		make_home(t);
 		update_link(t);
 	} else {
@@ -338,10 +349,42 @@ static int list_ldb_users(void *t)
 
 static int list_homedir_users(void *t)
 {
-	/* TODO */
-	fputs("Not yet implemented.\n", stderr);
+	DIR *dp = opendir(opt_homedir);
+	struct dirent *de;
 
-	return 1;
+	if (NULL == dp)
+		error(1, errno, "%s (opendir)", opt_homedir);
+
+	while (NULL != (de = readdir(dp))) {
+		/* Skip hidden files and directories. */
+		if ('.' == de->d_name[0])
+			continue;
+
+		/* Skip non-directories. */
+		if (DT_DIR != de->d_type)
+			continue;
+
+		/* Apply uid filter, if specified. */
+		if (uid && atol(de->d_name) != (long)(uid))
+			continue;
+
+		char *path = talloc_asprintf(t, "%s/%s", opt_homedir, de->d_name);
+
+		printf("--- NEW SEARCH RESULT ITEM ---\n");
+		printf("__UID__=%s\n", de->d_name);
+		printf("hasHome=true\n");
+
+		if (checkmark(path, "name")) {
+			char *name = getmark(t, path, "name");
+			printf("sAMAccountName=%s\n", name);
+		}
+
+		printf("\n");
+	}
+
+	closedir(dp);
+
+	return 0;
 }
 
 static int do_list(void *t, int argc, char **argv)
@@ -367,10 +410,22 @@ int do_delete(void *t, int argc, char **argv)
 
 	load_env(1);
 
-	/* TODO */
-	fputs("Not yet implemented.\n", stderr);
+	if (NULL == opt_homedir)
+		error(1, 0, "Please specify the --homedir option.");
 
-	return 1;
+	if (NULL == opt_linkdir)
+		error(1, 0, "Please specify the --linkdir option.");
+
+	if (NULL == opt_trashdir)
+		error(1, 0, "Please specify the --trashdir option.");
+
+	/* We want to delete the home. */
+	has_home = 0;
+
+	update_link(t);
+	trash_home(t);
+
+	return 0;
 }
 
 int main(int argc, char **argv)
