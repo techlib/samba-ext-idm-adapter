@@ -17,12 +17,19 @@
 #include <ldb.h>
 #include <talloc.h>
 
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/xattr.h>
+#include <attr/xattr.h>
+
+#include <limits.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <getopt.h>
 #include <errno.h>
 #include <error.h>
 #include <stdio.h>
-#include <string.h>
-#include <getopt.h>
-#include <unistd.h>
 
 #define DEFAULT_LDB "/var/lib/samba/private/sam.ldb"
 
@@ -30,38 +37,104 @@
 static const struct option longopts[] = {
 	{"help",     0, 0, 'h'},
 	{"version",  0, 0, 'V'},
+	{"update",   0, 0, 'u'},
+	{"list",     0, 0, 'l'},
+	{"delete",   0, 0, 'd'},
 
 	{"ldb-url",  1, 0, 'H'},
-	{"basedn",   0, 0, 'b'},
+	{"basedn",   1, 0, 'b'},
 
-	{"homedir",  1, 0, 'd'},
-	{"linkdir",  1, 0, 'l'},
+	{"homedir",  1, 0, 'D'},
+	{"linkdir",  1, 0, 'L'},
+	{"trashdir", 1, 0, 'T'},
+	{"group",    1, 0, 'G'},
 
 	{0, 0, 0, 0},
 };
 
 /* Short command-line options that should correspond to those above. */
-static const char optstring[] = "hVH:b:d:l:";
+static const char optstring[] = "hVuldvH:b:D:L:T:G:";
 
 /* LDB database file to operate on. */
 static char *opt_ldb_url = NULL;
 
 /* Base DN to update user accounts under. */
-static char *opt_ldb_basedn = NULL;
+static char *opt_basedn = NULL;
 
 /* Directory to maintain homes under. */
 static char *opt_homedir = NULL;
 
+/* Directory to move deleted homes under. */
+static char *opt_trashdir = NULL;
+
 /* Directory to maintain links to home directories under. */
 static char *opt_linkdir = NULL;
 
-static int do_version(int argc, char **argv)
+/* Environment variables with user information. */
+unsigned long uid = 0;
+unsigned long gid = 100;
+const char *password = NULL;
+const char *username = NULL;
+int has_home = 0;
+
+inline static int is_true(const char *str)
+{
+	if (0 == strcasecmp("true", str))
+		return 1;
+
+	if (0 == strcmp("1", str))
+		return 1;
+
+	return 0;
+}
+
+static void load_env(int require_uid)
+{
+	const char *env_UID = getenv("__UID__");
+	const char *env_NAME = getenv("__NAME__");
+	const char *env_unicodePwd = getenv("unicodePwd");
+	const char *env_sAMAccountName = getenv("sAMAccountName");
+	const char *env_hasHome = getenv("hasHome");
+
+	if (env_UID && 0 == strlen(env_UID))
+		error(1, 0, "__UID__ specified, but empty.");
+
+	if (env_NAME && 0 == strlen(env_NAME))
+		error(1, 0, "__NAME__ specified, but empty.");
+
+	if (env_UID)
+		uid = atol(env_UID);
+	else if (env_NAME)
+		uid = atol(env_NAME);
+	else if (require_uid)
+		error(1, 0, "Neither __NAME__ nor __UID__ variable set.");
+
+	if (require_uid && 0 == uid)
+		error(1, 0, "Non-positive user identifier specified.");
+
+	if (env_unicodePwd && 0 == strlen(env_unicodePwd))
+		error(1, 0, "unicodePwd specified, but empty.");
+
+	password = env_unicodePwd;
+
+	if (env_sAMAccountName && 0 == strlen(env_sAMAccountName))
+		error(1, 0, "sAMAccountName specified, but empty.");
+
+	username = env_sAMAccountName;
+
+	if (env_hasHome && 0 == strlen(env_hasHome))
+		error(1, 0, "hasHome specified, but empty.");
+
+	has_home = is_true(env_hasHome);
+}
+
+static int do_version(void *t, int argc, char **argv)
 {
 	printf("samba-ext-idm-adapter %s\n", VERSION);
 	return 0;
 }
 
-static int do_help(int argc, char **argv)
+static int do_help(void *t, int argc, char **argv)
 {
 	puts("Usage: samba-ext-idm-adapter [ACTION] OPTION...");
 	puts("Create home and change Samba password hash from env.");
@@ -69,14 +142,18 @@ static int do_help(int argc, char **argv)
 	puts("ACTIONS:");
 	puts("  --help, -h          Display this help.");
 	puts("  --version, -V       Display version information.");
+	puts("  --update, -u        Apply the changes.");
+	puts("  --list, -L          Apply the changes.");
 	puts("");
 	puts("OPTIONS:");
 	puts("  --ldb-url, -H URL   LDB database file to operate on.");
 	puts("                      Can also be given as LDB_URL variable.");
 	puts("                      Defaults to " DEFAULT_LDB ".");
 	puts("  --basedn, -b DN     Base DN to update user accounts under.");
-	puts("  --homedir, -d PATH  Directory to maintain home directories under.");
-	puts("  --linkdir, -l PATH  Directory to maintain links to homes under.");
+	puts("  --homedir, -D PATH  Directory to maintain home directories under.");
+	puts("  --linkdir, -L PATH  Directory to maintain links to homes under.");
+	puts("  --trashdir, -T PATH Directory to move deleted homes under.");
+	puts("  --group, -G GID     Numeric group identifier for homes.");
 	puts("");
 	puts("ENVIRONMENT:");
 	puts("  LDB_URL             An alternative way to specify LDB file.");
@@ -84,21 +161,222 @@ static int do_help(int argc, char **argv)
 	puts("  __UID__             Used if the __NAME__ is not specified.");
 	puts("  unicodePwd          Hex-encoded Samba password hash.");
 	puts("  sAMAccountName      Login name of the user account.");
+	puts("  hasHome             Whether the user should have a homedir.");
 	puts("");
 	puts("Report bugs to <http://github.org/techlib/samba-ext-idm-adapter>.");
 	return 0;
 }
 
-static int do_apply(int argc, char **argv)
+static void mark(const char *path, const char *name, const char *value)
 {
+	char fullname[PATH_MAX] = "user.";
+
+	strcat(fullname, name);
+
+	if (0 != setxattr(path, fullname, value, strlen(value), 0))
+		error(1, errno, "%s: %s=%s", path, fullname, value);
+}
+
+static void unmark(const char *path, const char *name)
+{
+	char fullname[PATH_MAX] = "user.";
+
+	strcat(fullname, name);
+
+	if (0 != removexattr(path, fullname)) {
+		if (errno != ENOATTR)
+			error(1, errno, "%s (remove %s)", path, fullname);
+	}
+}
+
+static int checkmark(const char *path, const char *name)
+{
+	char fullname[PATH_MAX] = "user.";
+
+	strcat(fullname, name);
+
+	return getxattr(path, fullname, NULL, 0) >= 0;
+}
+
+static char *getmark(void *t, const char *path, const char *name)
+{
+	char *value = NULL;
+	char fullname[PATH_MAX] = "user.";
+
+	strcat(fullname, name);
+
+	ssize_t size = getxattr(path, fullname, NULL, 0);
+
+	if (size >= 0)
+		value = talloc_zero_array(t, char, size + 1);
+
+	if (-1 == getxattr(path, fullname, value, size))
+		error(1, errno, "%s (get %s)", path, fullname);
+
+	return value;
+}
+
+static void make_home(void *t)
+{
+	char *path = talloc_asprintf(t, "%s/%lu", opt_homedir, uid);
+
+	if (0 != mkdir(path, 0700)) {
+		if (errno != EEXIST)
+			error(1, errno, "%s", path);
+	}
+
+	if (0 != chown(path, uid, gid))
+		error(0, errno, "%s (chown %lu:%lu)", path, uid, gid);
+}
+
+static void trash_home(void *t)
+{
+	char *path = talloc_asprintf(t, "%s/%lu", opt_homedir, uid);
+	int i;
+
+	for (i = 0; /**/; i++) {
+		char *dest = talloc_asprintf(t, "%s/%lu.%i", opt_trashdir, uid, i);
+
+		if (0 != rename(path, dest)) {
+			if (EEXIST != errno)
+				error(1, errno, "%s -> %s", path, dest);
+
+			talloc_free(dest);
+			continue;
+		}
+
+		talloc_free(dest);
+		break;
+	}
+}
+
+static void update_link(void *t)
+{
+	char *home = talloc_asprintf(t, "%s/%lu", opt_homedir, uid);
+
+	/* Remove the old link. */
+	if (checkmark(home, "name")) {
+		char *oldname = getmark(t, home, "name");
+		char *oldpath = talloc_asprintf(t, "%s/%s", opt_linkdir, oldname);
+
+		if (!has_home || NULL == username ||
+		    0 != strcmp(oldname, username))
+		{
+			if (0 != unlink(oldpath))
+				error(1, errno, "%s (unlink)", oldpath);
+		}
+
+		unmark(home, "name");
+	}
+
+	/* Create a new link. */
+	if (has_home && username) {
+		char *path = talloc_asprintf(t, "%s/%s", opt_linkdir, username);
+		char *rhome = talloc_array(t, char, PATH_MAX);
+
+		if (NULL == realpath(home, rhome))
+			error(1, errno, "%s", home);
+
+		if (0 != symlink(rhome, path)) {
+			if (EEXIST != errno)
+				error(1, errno, "%s -> %s", path, rhome);
+		}
+
+		mark(rhome, "name", username);
+	}
+}
+
+static void update_password(void *t)
+{
+	/* TODO */
+}
+
+static int do_update(void *t, int argc, char **argv)
+{
+	if (argc > 0)
+		error(1, 0, "Too many arguments.");
+
+	load_env(1);
+
+	if (NULL == username)
+		error(1, 0, "Variable sAMAccountName not set.");
+
+	if (NULL == opt_homedir)
+		error(1, 0, "Please specify the --homedir option.");
+
+	if (NULL == opt_linkdir)
+		error(1, 0, "Please specify the --linkdir option.");
+
+	if (NULL == opt_trashdir)
+		error(1, 0, "Please specify the --trashdir option.");
+
+	if (password) {
+		if (NULL == opt_basedn)
+			error(1, 0, "Please specify the --basedn option.");
+
+		update_password(t);
+	}
+
+	if (has_home) {
+		make_home(t);
+		update_link(t);
+	} else {
+		update_link(t);
+		trash_home(t);
+	}
+
+	return 0;
+}
+
+static int list_ldb_users(void *t)
+{
+	/* TODO */
 	fputs("Not yet implemented.\n", stderr);
+
+	return 1;
+}
+
+static int list_homedir_users(void *t)
+{
+	/* TODO */
+	fputs("Not yet implemented.\n", stderr);
+
+	return 1;
+}
+
+static int do_list(void *t, int argc, char **argv)
+{
+	if (argc > 0)
+		error(1, 0, "Too many arguments.");
+
+	load_env(0);
+
+	if (!opt_homedir && !opt_basedn)
+		error(1, 0, "Please supply --homedir or --basedn option.");
+
+	if (opt_basedn)
+		return list_ldb_users(t);
+
+	return list_homedir_users(t);
+}
+
+int do_delete(void *t, int argc, char **argv)
+{
+	if (argc > 0)
+		error(1, 0, "Too many arguments.");
+
+	load_env(1);
+
+	/* TODO */
+	fputs("Not yet implemented.\n", stderr);
+
 	return 1;
 }
 
 int main(int argc, char **argv)
 {
 	int result, c, idx = 0;
-	int (*action)(int argc, char **argv) = do_apply;
+	int (*action)(void *t, int argc, char **argv) = do_update;
 	void *t = talloc_init("samba-ext-idm-adapter");
 
 	while (-1 != (c = getopt_long(argc, argv, optstring, longopts, &idx)))
@@ -111,6 +389,18 @@ int main(int argc, char **argv)
 				action = do_version;
 				break;
 
+			case 'u':
+				action = do_update;
+				break;
+
+			case 'd':
+				action = do_delete;
+				break;
+
+			case 'l':
+				action = do_list;
+				break;
+
 			case 'H':
 				if (opt_ldb_url)
 					talloc_free(opt_ldb_url);
@@ -119,31 +409,55 @@ int main(int argc, char **argv)
 				break;
 
 			case 'b':
-				if (opt_ldb_basedn)
-					talloc_free(opt_ldb_basedn);
+				if (opt_basedn)
+					talloc_free(opt_basedn);
 
-				opt_ldb_basedn = talloc_strdup(t, optarg);
+				opt_basedn = talloc_strdup(t, optarg);
 				break;
 
-			case 'd':
+			case 'D':
+				if (0 == strcmp(optarg, ""))
+					error(1, 0, "Empty --homedir given.");
+
 				if (opt_homedir)
 					talloc_free(opt_homedir);
 
 				opt_homedir = talloc_strdup(t, optarg);
 				break;
 
-			case 'l':
+			case 'L':
+				if (0 == strcmp(optarg, ""))
+					error(1, 0, "Empty --linkdir given.");
+
 				if (opt_linkdir)
 					talloc_free(opt_linkdir);
 
 				opt_linkdir = talloc_strdup(t, optarg);
+				break;
+
+			case 'T':
+				if (0 == strcmp(optarg, ""))
+					error(1, 0, "Empty --trashdir given.");
+
+				if (opt_trashdir)
+					talloc_free(opt_trashdir);
+
+				opt_trashdir = talloc_strdup(t, optarg);
+				break;
+
+			case 'G':
+				gid = atol(optarg);
+
+				if (0 == gid)
+					error(1, 0, "Invalid GID.");
+
 				break;
 		}
 
 	if (NULL == opt_ldb_url)
 		opt_ldb_url = talloc_strdup(t, DEFAULT_LDB);
 
-	result = action(argc - optind, argv + optind);
+	result = action(t, argc - optind, argv + optind);
 
 	talloc_free(t);
 	return result;

@@ -1,0 +1,20 @@
+#!/bin/bash -ex
+
+ldbadd -H users.ldb >/dev/null <<-EOF
+dn: CN=12345,CN=Users,DC=public,DC=test,DC=ntkcz,DC=cz
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: user
+cn: 12345
+sAMAccountName: alice
+EOF
+
+ldbsearch -H users.ldb | grep -q '^cn: 12345$'
+ldbsearch -H users.ldb | grep -q '^sAMAccountName: alice$'
+
+mkdir -p home link trash
+
+test -d home -a -d link -a -d trash
+
+# EOF

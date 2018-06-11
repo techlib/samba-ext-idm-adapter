@@ -1,0 +1,40 @@
+#!/bin/bash -e
+
+cd "$(dirname "${0}")"
+
+rm -rf mock
+mkdir -p mock
+
+result=0
+
+export PATH="${PWD}/../build/src:${PATH}"
+
+for testcase in ./t-*; do
+	[ -f "${testcase}" ] || continue
+
+	echo -n "Case ${testcase#./}: "
+
+	if (cd mock && ".${testcase}") &>mock/test.log; then
+		if tty -s <&1; then
+			echo -e '\033[1;32mok\033[0m'
+		else
+			echo 'ok'
+		fi
+	else
+		if tty -s <&1; then
+			echo -e '\033[1;31mfailed\033[0m'
+		else
+			echo 'failed'
+		fi
+
+		echo -e '\033[1;31m'
+		cat mock/test.log | sed 's#^#  #' >&2
+		echo -e '\033[0m'
+
+		result=1
+	fi
+done
+
+exit ${result}
+
+# EOF
