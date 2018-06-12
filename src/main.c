@@ -257,6 +257,7 @@ static void make_home(void *t)
 static void trash_home(void *t)
 {
 	char *path = talloc_asprintf(t, "%s/%lu", opt_homedir, uid);
+	char *dest = NULL;
 	int i;
 
 	if (0 != access(path, F_OK)) {
@@ -267,7 +268,10 @@ static void trash_home(void *t)
 	}
 
 	for (i = 0; /**/; i++) {
-		char *dest = talloc_asprintf(t, "%s/%lu.%i", opt_trashdir, uid, i);
+		if (dest)
+			talloc_free(dest);
+
+		dest = talloc_asprintf(t, "%s/%lu.%i", opt_trashdir, uid, i);
 
 		if (0 != rename(path, dest)) {
 			if (EEXIST == errno)
