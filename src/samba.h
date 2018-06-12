@@ -31,6 +31,17 @@ struct samba_user {
 
 
 /**
+ * Initialize LDB context.
+ *
+ * \param t       talloc memory context
+ * \param url     a LDB file url
+ *
+ * \returns the LDB context
+ */
+struct ldb_context *samba_init(void *t, const char *url);
+
+
+/**
  * Find samba users with given cn (all if cn=0).
  *
  * \param ldb     a LDB context

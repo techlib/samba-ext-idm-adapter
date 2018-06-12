@@ -15,8 +15,6 @@
  */
 
 #include <ldb.h>
-#include <ldb_module.h>
-#include <ldb_errors.h>
 #include <talloc.h>
 
 #include <sys/stat.h>
@@ -368,23 +366,12 @@ static int do_update(void *t, int argc, char **argv)
 
 static int list_ldb_users(void *t)
 {
+	struct ldb_context *ldb;
 	struct samba_user **users = NULL;
 	size_t b;
 	int i;
 
-	if (0 != ldb_global_init())
-		error(1, errno, "LDB global initialization failed");
-
-	struct ldb_context *ldb = ldb_init(t, NULL);
-
-	if (0 != ldb_modules_hook(ldb, LDB_MODULE_HOOK_CMDLINE_PRECONNECT))
-		error(1, errno, "failed to run module preconnect hooks");
-
-	if (0 != ldb_connect(ldb, opt_ldb_url, 0, NULL))
-		error(1, errno, "failed to open LDB");
-
-	if (0 != ldb_modules_hook(ldb, LDB_MODULE_HOOK_CMDLINE_POSTCONNECT))
-		error(1, errno, "failed to run module postconnect hooks");
+	ldb = samba_init(t, opt_ldb_url);
 
 	if (0 != samba_list_users(ldb, t, &users, opt_basedn, uid))
 		error(1, errno, "LDB user search failed");

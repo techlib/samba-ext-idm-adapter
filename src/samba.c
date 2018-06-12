@@ -15,12 +15,41 @@
  */
 
 #include <ldb.h>
+#include <ldb_module.h>
+#include <ldb_errors.h>
 #include <talloc.h>
 
 #include <sys/types.h>
 #include <string.h>
+#include <error.h>
+#include <errno.h>
 
 #include "samba.h"
+
+static int _ldb_init_done = 0;
+
+struct ldb_context *samba_init(void *t, const char *url)
+{
+	if (!_ldb_init_done) {
+		_ldb_init_done = 1;
+
+		if (0 != ldb_global_init())
+			error(1, errno, "LDB global initialization failed");
+	}
+
+	struct ldb_context *ldb = ldb_init(t, NULL);
+
+	if (0 != ldb_modules_hook(ldb, LDB_MODULE_HOOK_CMDLINE_PRECONNECT))
+		error(1, errno, "failed to run module preconnect hooks");
+
+	if (0 != ldb_connect(ldb, url, 0, NULL))
+		error(1, errno, "failed to open LDB");
+
+	if (0 != ldb_modules_hook(ldb, LDB_MODULE_HOOK_CMDLINE_POSTCONNECT))
+		error(1, errno, "failed to run module postconnect hooks");
+
+	return ldb;
+}
 
 static const char *const attrs[] = {
 	"cn",
