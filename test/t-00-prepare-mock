@@ -1,13 +1,23 @@
 #!/bin/bash -ex
 
 ldbadd -H users.ldb >/dev/null <<-EOF
-dn: CN=12345,CN=Users,DC=public,DC=test,DC=ntkcz,DC=cz
+dn: CN=12345,CN=Users,DC=example,DC=com
 objectClass: top
 objectClass: person
 objectClass: organizationalPerson
 objectClass: user
 cn: 12345
 sAMAccountName: alice
+EOF
+
+ldbadd -H users.ldb >/dev/null <<-EOF
+dn: CN=54321,CN=Users,DC=example,DC=com
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: user
+cn: 54321
+sAMAccountName: bob
 EOF
 
 ldbsearch -H users.ldb | grep -q '^cn: 12345$'

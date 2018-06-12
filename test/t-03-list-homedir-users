@@ -1,0 +1,44 @@
+#!/bin/bash -ex
+
+function adapter()
+{
+	samba-ext-idm-adapter \
+		-D home -L link -T trash \
+		"${@}"
+}
+
+# Create home directories.
+__NAME__='12345' hasHome='true' sAMAccountName='alice' adapter -u
+__NAME__='54321' hasHome='true' sAMAccountName='bob'   adapter -u
+
+# List all users.
+adapter -l | grep -q '__UID__=12345'
+adapter -l | grep -q 'sAMAccountName=alice'
+adapter -l | grep -q '__UID__=54321'
+adapter -l | grep -q 'sAMAccountName=bob'
+
+# All users naturally have their home directories.
+! ( adapter -l | grep -q 'hasHome=false' )
+
+# List just one user by their CN.
+    __UID__=12345 adapter -l | grep -q 12345
+    __UID__=12345 adapter -l | grep -q alice
+! ( __UID__=12345 adapter -l | grep -q 54321 )
+! ( __UID__=12345 adapter -l | grep -q bob )
+
+    __UID__=54321 adapter -l | grep -q 54321
+    __UID__=54321 adapter -l | grep -q bob
+! ( __UID__=54321 adapter -l | grep -q 12345 )
+! ( __UID__=54321 adapter -l | grep -q alice )
+
+__UID__='12345' adapter -d
+__UID__='54321' adapter -d
+
+test ! -d home/12345
+test ! -d home/54321
+
+test ! -h link/alice
+test ! -h link/bob
+
+
+# EOF
