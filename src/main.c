@@ -18,6 +18,7 @@
 #include <talloc.h>
 
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/xattr.h>
 #include <attr/xattr.h>
@@ -220,6 +221,26 @@ static char *getmark(void *t, const char *path, const char *name)
 	return value;
 }
 
+static int touch(const char *path)
+{
+	struct timeval tv[2];
+	struct stat st;
+
+	if (0 != stat(path, &st))
+		return -1;
+
+	TIMESPEC_TO_TIMEVAL(&tv[0], &st.st_atim);
+	TIMESPEC_TO_TIMEVAL(&tv[1], &st.st_mtim);
+
+	if (0 != gettimeofday(&tv[1], NULL))
+		return -1;
+
+	if (0 != utimes(path, tv))
+		return -1;
+
+	return 0;
+}
+
 static void make_home(void *t)
 {
 	char *path = talloc_asprintf(t, "%s/%lu", opt_homedir, uid);
@@ -249,14 +270,15 @@ static void trash_home(void *t)
 		char *dest = talloc_asprintf(t, "%s/%lu.%i", opt_trashdir, uid, i);
 
 		if (0 != rename(path, dest)) {
-			if (EEXIST != errno)
-				error(1, errno, "%s -> %s", path, dest);
+			if (EEXIST == errno)
+				continue;
 
-			talloc_free(dest);
-			continue;
+			error(1, errno, "%s -> %s", path, dest);
 		}
 
-		talloc_free(dest);
+		if (0 != touch(dest))
+			error(0, errno, "%s (touch)", dest);
+
 		break;
 	}
 }
