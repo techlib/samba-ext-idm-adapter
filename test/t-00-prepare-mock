@@ -7,6 +7,7 @@ objectClass: person
 objectClass: organizationalPerson
 objectClass: user
 cn: 12345
+uidNumber: 12345
 sAMAccountName: alice
 EOF
 
@@ -17,6 +18,7 @@ objectClass: person
 objectClass: organizationalPerson
 objectClass: user
 cn: 54321
+uidNumber: 54321
 sAMAccountName: bob
 EOF
 

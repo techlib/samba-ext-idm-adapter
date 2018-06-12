@@ -15,6 +15,8 @@
  */
 
 #include <ldb.h>
+#include <ldb_module.h>
+#include <ldb_errors.h>
 #include <talloc.h>
 
 #include <sys/stat.h>
@@ -33,7 +35,7 @@
 #include <error.h>
 #include <stdio.h>
 
-#define DEFAULT_LDB "/var/lib/samba/private/sam.ldb"
+#include "samba.h"
 
 /* Long command-line options. */
 static const struct option longopts[] = {
@@ -153,7 +155,6 @@ static int do_help(void *t, int argc, char **argv)
 	puts("OPTIONS:");
 	puts("  --ldb-url, -H URL   LDB database file to operate on.");
 	puts("                      Can also be given as LDB_URL variable.");
-	puts("                      Defaults to " DEFAULT_LDB ".");
 	puts("  --basedn, -b DN     Base DN to update user accounts under.");
 	puts("  --homedir, -D PATH  Directory to maintain home directories under.");
 	puts("  --linkdir, -L PATH  Directory to maintain links to homes under.");
@@ -367,10 +368,58 @@ static int do_update(void *t, int argc, char **argv)
 
 static int list_ldb_users(void *t)
 {
-	/* TODO */
-	fputs("Not yet implemented.\n", stderr);
+	struct samba_user **users = NULL;
+	size_t b;
+	int i;
 
-	return 1;
+	if (0 != ldb_global_init())
+		error(1, errno, "LDB global initialization failed");
+
+	struct ldb_context *ldb = ldb_init(t, NULL);
+
+	if (0 != ldb_modules_hook(ldb, LDB_MODULE_HOOK_CMDLINE_PRECONNECT))
+		error(1, errno, "failed to run module preconnect hooks");
+
+	if (0 != ldb_connect(ldb, opt_ldb_url, 0, NULL))
+		error(1, errno, "failed to open LDB");
+
+	if (0 != ldb_modules_hook(ldb, LDB_MODULE_HOOK_CMDLINE_POSTCONNECT))
+		error(1, errno, "failed to run module postconnect hooks");
+
+	if (0 != samba_list_users(ldb, t, &users, opt_basedn, uid))
+		error(1, errno, "LDB user search failed");
+
+	for (i = 0; users[i]; i++) {
+		if (0 == users[i]->cn)
+			continue;
+
+		char *path = talloc_asprintf(t, "%s/%lu", opt_homedir, users[i]->cn);
+
+		printf("--- NEW SEARCH RESULT ITEM ---\n");
+		printf("__UID__=%lu\n", users[i]->cn);
+
+		if (users[i]->name)
+			printf("sAMAccountName=%s\n", users[i]->name);
+
+		if (users[i]->pwd) {
+			printf("unicodePwd=");
+
+			for (b = 0; b < users[i]->pwd->length; b++)
+				printf("%02x", users[i]->pwd->data[b]);
+
+			printf("\n");
+		}
+
+		if (0 == access(path, F_OK))
+			printf("hasHome=true\n");
+		else
+			printf("hasHome=false\n");
+
+		printf("\n");
+	}
+
+	talloc_free(ldb);
+	return 0;
 }
 
 static int list_homedir_users(void *t)
@@ -420,10 +469,16 @@ static int do_list(void *t, int argc, char **argv)
 
 	load_env(0);
 
-	if (!opt_homedir && !opt_basedn)
-		error(1, 0, "Please supply --homedir or --basedn option.");
+	if (!opt_homedir)
+		error(1, 0, "Please specify the --homedir option.");
 
-	if (opt_basedn)
+	if (opt_basedn && !opt_ldb_url)
+		error(1, 0, "Please specify the --ldb-url option as well.");
+
+	if (opt_ldb_url && !opt_basedn)
+		error(1, 0, "Please specify the --basedn option as well.");
+
+	if (opt_basedn && opt_ldb_url)
 		return list_ldb_users(t);
 
 	return list_homedir_users(t);
@@ -534,9 +589,6 @@ int main(int argc, char **argv)
 
 				break;
 		}
-
-	if (NULL == opt_ldb_url)
-		opt_ldb_url = talloc_strdup(t, DEFAULT_LDB);
 
 	result = action(t, argc - optind, argv + optind);
 
