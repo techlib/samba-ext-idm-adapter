@@ -119,6 +119,20 @@ int samba_set_password(struct ldb_context *ldb,
                        const char *base, unsigned long cn,
                        struct ldb_val *pwd)
 {
-	/* TODO */
-	return -1;
+	struct ldb_message *msg = talloc_zero(NULL, struct ldb_message);
+
+	msg->dn = ldb_dn_new_fmt(msg, ldb, "CN=%lu,%s", cn, base);
+	msg->num_elements = 1;
+	msg->elements = talloc_zero_array(msg, struct ldb_message_element,
+	                                  msg->num_elements);
+
+	msg->elements[0].flags = LDB_FLAG_MOD_REPLACE;
+	msg->elements[0].name = talloc_strdup(msg, "unicodePwd");
+	msg->elements[0].num_values = 1;
+	msg->elements[0].values = talloc_steal(msg, pwd);
+
+	int r = ldb_modify(ldb, msg);
+
+	talloc_free(msg);
+	return r;
 }

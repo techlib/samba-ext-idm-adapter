@@ -324,7 +324,22 @@ static void update_link(void *t)
 
 static void update_password(void *t)
 {
-	/* TODO */
+	struct ldb_context *ldb = samba_init(t, opt_ldb_url);
+	struct ldb_val *pwd = talloc_zero(t, struct ldb_val);
+	size_t b;
+
+	if (strlen(password) % 2)
+		error(1, 0, "invalid password hash length");
+
+	pwd->length = strlen(password) / 2;
+	pwd->data = talloc_zero_array(pwd, uint8_t, pwd->length + 1);
+
+	for (b = 0; b < pwd->length; b++)
+		if (1 != sscanf(password + (2 * b), "%2hhx", pwd->data + b))
+			error(1, errno, "invalid password hash");
+
+	if (0 != samba_set_password(ldb, opt_basedn, uid, pwd))
+		error(1, errno, "failed to set password");
 }
 
 static int do_update(void *t, int argc, char **argv)
@@ -344,6 +359,9 @@ static int do_update(void *t, int argc, char **argv)
 		error(1, 0, "Please specify the --trashdir option.");
 
 	if (password) {
+		if (NULL == opt_ldb_url)
+			error(1, 0, "Please specify the --ldb-url option.");
+
 		if (NULL == opt_basedn)
 			error(1, 0, "Please specify the --basedn option.");
 
@@ -366,12 +384,10 @@ static int do_update(void *t, int argc, char **argv)
 
 static int list_ldb_users(void *t)
 {
-	struct ldb_context *ldb;
+	struct ldb_context *ldb = samba_init(t, opt_ldb_url);
 	struct samba_user **users = NULL;
 	size_t b;
 	int i;
-
-	ldb = samba_init(t, opt_ldb_url);
 
 	if (0 != samba_list_users(ldb, t, &users, opt_basedn, uid))
 		error(1, errno, "LDB user search failed");
