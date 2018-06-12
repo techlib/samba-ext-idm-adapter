@@ -439,7 +439,7 @@ static int list_homedir_users(void *t)
 			continue;
 
 		/* Skip non-directories. */
-		if (DT_DIR & de->d_type)
+		if (de->d_type && !(DT_DIR & de->d_type))
 			continue;
 
 		/* Apply uid filter, if specified. */
