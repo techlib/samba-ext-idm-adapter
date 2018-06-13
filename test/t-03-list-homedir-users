@@ -8,17 +8,14 @@ function adapter()
 }
 
 # Create home directories.
-__NAME__='12345' hasHome='true' sAMAccountName='alice' adapter -u
-__NAME__='54321' hasHome='true' sAMAccountName='bob'   adapter -u
+__NAME__='12345' sAMAccountName='alice' adapter -u
+__NAME__='54321' sAMAccountName='bob'   adapter -u
 
 # List all users.
 adapter -l | grep -q '__UID__=12345'
 adapter -l | grep -q 'sAMAccountName=alice'
 adapter -l | grep -q '__UID__=54321'
 adapter -l | grep -q 'sAMAccountName=bob'
-
-# All users naturally have their home directories.
-! ( adapter -l | grep -q 'hasHome=false' )
 
 # List just one user by their CN.
     __UID__=12345 adapter -l | grep -q 12345

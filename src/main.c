@@ -77,21 +77,6 @@ unsigned long uid = 0;
 unsigned long gid = 100;
 const char *password = NULL;
 const char *username = NULL;
-int has_home = 0;
-
-inline static int is_true(const char *str)
-{
-	if (NULL == str)
-		return 0;
-
-	if (0 == strcasecmp("true", str))
-		return 1;
-
-	if (0 == strcmp("1", str))
-		return 1;
-
-	return 0;
-}
 
 static void load_env(int require_uid)
 {
@@ -99,7 +84,6 @@ static void load_env(int require_uid)
 	const char *env_NAME = getenv("__NAME__");
 	const char *env_unicodePwd = getenv("unicodePwd");
 	const char *env_sAMAccountName = getenv("sAMAccountName");
-	const char *env_hasHome = getenv("hasHome");
 
 	if (env_UID && 0 == strlen(env_UID))
 		error(1, 0, "__UID__ specified, but empty.");
@@ -126,11 +110,6 @@ static void load_env(int require_uid)
 		error(1, 0, "sAMAccountName specified, but empty.");
 
 	username = env_sAMAccountName;
-
-	if (env_hasHome && 0 == strlen(env_hasHome))
-		error(1, 0, "hasHome specified, but empty.");
-
-	has_home = is_true(env_hasHome);
 }
 
 static int do_version(void *t, int argc, char **argv)
@@ -166,7 +145,6 @@ static int do_help(void *t, int argc, char **argv)
 	puts("  __UID__             Used if the __NAME__ is not specified.");
 	puts("  unicodePwd          Hex-encoded Samba password hash.");
 	puts("  sAMAccountName      Login name of the user account.");
-	puts("  hasHome             Whether the user should have a homedir.");
 	puts("");
 	puts("Report bugs to <http://github.org/techlib/samba-ext-idm-adapter>.");
 	return 0;
@@ -287,27 +265,25 @@ static void trash_home(void *t)
 	}
 }
 
-static void update_link(void *t)
+static void update_link(void *t, int del)
 {
 	char *home = talloc_asprintf(t, "%s/%lu", opt_homedir, uid);
 
 	/* Remove the old link. */
-	if (checkmark(home, "name")) {
+	if ((del || username) && checkmark(home, "name")) {
 		char *oldname = getmark(t, home, "name");
 		char *oldpath = talloc_asprintf(t, "%s/%s", opt_linkdir, oldname);
 
-		if (!has_home || NULL == username ||
-		    0 != strcmp(oldname, username))
-		{
+		if (del || strcmp(oldname, username)) {
 			if (0 != unlink(oldpath))
 				error(1, errno, "%s (unlink)", oldpath);
-		}
 
-		unmark(home, "name");
+			unmark(home, "name");
+		}
 	}
 
 	/* Create a new link. */
-	if (has_home && username) {
+	if (!del && username) {
 		char *path = talloc_asprintf(t, "%s/%s", opt_linkdir, username);
 		char *rhome = talloc_array(t, char, PATH_MAX);
 
@@ -369,15 +345,9 @@ static int do_update(void *t, int argc, char **argv)
 		update_password(t);
 	}
 
-	if (has_home) {
-		if (NULL == username)
-			error(1, 0, "Variable sAMAccountName not set.");
-
+	if (username) {
 		make_home(t);
-		update_link(t);
-	} else {
-		update_link(t);
-		trash_home(t);
+		update_link(t, 0);
 	}
 
 	return 0;
@@ -411,11 +381,6 @@ static int list_ldb_users(void *t)
 
 			printf("\n");
 		}
-
-		if (0 == access(path, F_OK))
-			printf("hasHome=true\n");
-		else
-			printf("hasHome=false\n");
 
 		if (checkmark(path, "name")) {
 			char *name = getmark(t, path, "name");
@@ -455,7 +420,6 @@ static int list_homedir_users(void *t)
 		printf("--- NEW SEARCH RESULT ITEM ---\n");
 		printf("__UID__=%s\n", de->d_name);
 		printf("__NAME__=%s\n", de->d_name);
-		printf("hasHome=true\n");
 
 		if (checkmark(path, "name")) {
 			char *name = getmark(t, path, "name");
@@ -508,10 +472,7 @@ int do_delete(void *t, int argc, char **argv)
 	if (NULL == opt_trashdir)
 		error(1, 0, "Please specify the --trashdir option.");
 
-	/* We want to delete the home. */
-	has_home = 0;
-
-	update_link(t);
+	update_link(t, 1);
 	trash_home(t);
 
 	return 0;

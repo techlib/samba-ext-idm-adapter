@@ -10,7 +10,7 @@ function adapter()
 }
 
 # Create one home directory.
-__NAME__='12345' hasHome='true' sAMAccountName='alice' adapter -u
+__NAME__='12345' sAMAccountName='alice' adapter -u
 
 # List all users using LDB.
 adapter -l | grep -q '__UID__=12345'
@@ -19,9 +19,6 @@ adapter -l | grep -q '__UID__=54321'
 
 # No homedir means no user.name xattr.
 ! ( adapter -l | grep -q 'sAMAccountName=bob' )
-
-# At least one should not have the home directory.
-adapter -l | grep -q 'hasHome=false'
 
 # List just one user by their CN.
     __UID__=12345 adapter -l | grep -q 12345

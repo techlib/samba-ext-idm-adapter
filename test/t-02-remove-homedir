@@ -1,18 +1,15 @@
 #!/bin/bash -ex
 
 # Remove both the home and the link.
-env __NAME__='12345' sAMAccountName='alice' hasHome='false' \
-	samba-ext-idm-adapter -D home -L link -T trash
+__NAME__='12345' sAMAccountName='alice' \
+	samba-ext-idm-adapter -D home -L link -T trash -d
 
 test ! -d home/12345
 test ! -h link/alice
 test   -d trash/12345.0
 
 # Remove a nonexistent home and a link.
-env __NAME__='666666' hasHome='false' \
-	samba-ext-idm-adapter -D home -L link -T trash
-
-env __NAME__='666666' \
-	samba-ext-idm-adapter -d -D home -L link -T trash
+__NAME__='666666' samba-ext-idm-adapter -D home -L link -T trash -d
+__NAME__='666666' samba-ext-idm-adapter -D home -L link -T trash -d
 
 # EOF
