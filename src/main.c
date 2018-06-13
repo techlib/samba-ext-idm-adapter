@@ -401,6 +401,7 @@ static int list_ldb_users(void *t)
 
 		printf("--- NEW SEARCH RESULT ITEM ---\n");
 		printf("__UID__=%lu\n", users[i]->cn);
+		printf("__NAME__=%lu\n", users[i]->cn);
 
 		if (users[i]->name)
 			printf("sAMAccountName=%s\n", users[i]->name);
@@ -451,6 +452,7 @@ static int list_homedir_users(void *t)
 
 		printf("--- NEW SEARCH RESULT ITEM ---\n");
 		printf("__UID__=%s\n", de->d_name);
+		printf("__NAME__=%s\n", de->d_name);
 		printf("hasHome=true\n");
 
 		if (checkmark(path, "name")) {
