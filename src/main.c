@@ -147,8 +147,9 @@ static int do_help(void *t, int argc, char **argv)
 	puts("ACTIONS:");
 	puts("  --help, -h          Display this help.");
 	puts("  --version, -V       Display version information.");
-	puts("  --update, -u        Apply the changes.");
-	puts("  --list, -L          Apply the changes.");
+	puts("  --update, -u        Apply changes.");
+	puts("  --list, -l          List known users.");
+	puts("  --delete, -d        Delete the homedir.");
 	puts("");
 	puts("OPTIONS:");
 	puts("  --ldb-url, -H URL   LDB database file to operate on.");
