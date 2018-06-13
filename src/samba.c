@@ -53,7 +53,6 @@ struct ldb_context *samba_init(void *t, const char *url)
 
 static const char *const attrs[] = {
 	"cn",
-	"sAMAccountName",
 	"unicodePwd",
 	NULL
 };
@@ -97,9 +96,6 @@ int samba_list_users(struct ldb_context *ldb, void *t,
 
 			if (0 == strcmp(el->name, "cn"))
 				user->cn = atol(el_value(el));
-
-			if (0 == strcmp(el->name, "sAMAccountName"))
-				user->name = talloc_strdup(user, el_value(el));
 
 			if (0 == strcmp(el->name, "unicodePwd")) {
 				user->pwd = talloc(user, struct ldb_val);

@@ -403,9 +403,6 @@ static int list_ldb_users(void *t)
 		printf("__UID__=%lu\n", users[i]->cn);
 		printf("__NAME__=%lu\n", users[i]->cn);
 
-		if (users[i]->name)
-			printf("sAMAccountName=%s\n", users[i]->name);
-
 		if (users[i]->pwd) {
 			printf("unicodePwd=");
 
@@ -419,6 +416,11 @@ static int list_ldb_users(void *t)
 			printf("hasHome=true\n");
 		else
 			printf("hasHome=false\n");
+
+		if (checkmark(path, "name")) {
+			char *name = getmark(t, path, "name");
+			printf("sAMAccountName=%s\n", name);
+		}
 
 		printf("\n");
 	}

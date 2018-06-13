@@ -25,7 +25,6 @@
  */
 struct samba_user {
 	unsigned long   cn;
-	char           *name;
 	struct ldb_val *pwd;
 };
 
