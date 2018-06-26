@@ -21,7 +21,6 @@ set Samba password hashes using libldb for the Midpoint IdM.
 
 
 %build
-%configure
 make %{?_smp_mflags}
 
 
