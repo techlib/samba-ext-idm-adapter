@@ -10,6 +10,7 @@ Source0:	%{name}-%{version}.tar.gz
 
 BuildRequires:	libldb-devel
 BuildRequires:	libtalloc-devel
+BuildRequires:	libattr-devel
 
 %description
 Tool to create user home directories and symbolic links as well as
