@@ -118,7 +118,7 @@ int samba_set_password(struct ldb_context *ldb,
 	struct ldb_message *msg = talloc_zero(NULL, struct ldb_message);
 
 	msg->dn = ldb_dn_new_fmt(msg, ldb, "CN=%lu,%s", cn, base);
-	msg->num_elements = 1;
+	msg->num_elements = 2;
 	msg->elements = talloc_zero_array(msg, struct ldb_message_element,
 	                                  msg->num_elements);
 
@@ -126,6 +126,13 @@ int samba_set_password(struct ldb_context *ldb,
 	msg->elements[0].name = talloc_strdup(msg, "unicodePwd");
 	msg->elements[0].num_values = 1;
 	msg->elements[0].values = talloc_steal(msg, pwd);
+
+	msg->elements[1].flags = LDB_FLAG_MOD_REPLACE;
+	msg->elements[1].name = talloc_strdup(msg, "pwdLastSet");
+	msg->elements[1].num_values = 1;
+	msg->elements[1].values = talloc_zero_array(msg, struct ldb_val, 1);
+	msg->elements[1].values[0].length = 2;
+	msg->elements[1].values[0].data = (uint8_t *)talloc_strdup(msg, "-1");
 
 	int r = ldb_modify(ldb, msg);
 
