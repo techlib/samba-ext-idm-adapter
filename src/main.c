@@ -17,12 +17,11 @@
 #include <ldb.h>
 #include <talloc.h>
 
-#include <attr/attributes.h>
-#include <attr/xattr.h>
+#include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/time.h>
-#include <sys/types.h>
-#include <sys/xattr.h>
+#include <attr/xattr.h>
+#include <attr/attributes.h>
 
 #include <dirent.h>
 #include <errno.h>
