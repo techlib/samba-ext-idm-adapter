@@ -22,6 +22,7 @@
 #include <sys/types.h>
 #include <sys/xattr.h>
 #include <attr/xattr.h>
+#include <attr/attributes.h>
 
 #include <dirent.h>
 #include <limits.h>
