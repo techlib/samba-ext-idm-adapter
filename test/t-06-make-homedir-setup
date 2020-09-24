@@ -1,0 +1,16 @@
+#!/bin/bash -ex
+
+# Create the home directory with the link.
+__NAME__='12345' sAMAccountName='alice' \
+	samba-ext-idm-adapter -D home -L link -T trash -u -s ../setup.sh
+
+test -d home/12345
+test -h link/alice
+
+touch home/12345/hello.txt
+test -f link/alice/hello.txt
+
+# From setup.sh:
+test -f link/alice/12345.txt
+
+# EOF

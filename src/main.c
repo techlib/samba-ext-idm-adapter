@@ -17,22 +17,23 @@
 #include <ldb.h>
 #include <talloc.h>
 
+#include <attr/attributes.h>
+#include <attr/xattr.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/xattr.h>
-#include <attr/xattr.h>
-#include <attr/attributes.h>
 
 #include <dirent.h>
-#include <limits.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-#include <getopt.h>
 #include <errno.h>
 #include <error.h>
+#include <getopt.h>
+#include <limits.h>
+#include <spawn.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "samba.h"
 
@@ -48,6 +49,7 @@ static const struct option longopts[] = {
 	{"basedn",   1, 0, 'b'},
 
 	{"homedir",  1, 0, 'D'},
+	{"setup",    1, 0, 's'},
 	{"linkdir",  1, 0, 'L'},
 	{"trashdir", 1, 0, 'T'},
 	{"group",    1, 0, 'G'},
@@ -56,7 +58,7 @@ static const struct option longopts[] = {
 };
 
 /* Short command-line options that should correspond to those above. */
-static const char optstring[] = "hVuldvH:b:D:L:T:G:";
+static const char optstring[] = "hVuldvH:b:D:L:T:G:s:";
 
 /* LDB database file to operate on. */
 static char *opt_ldb_url = NULL;
@@ -66,6 +68,9 @@ static char *opt_basedn = NULL;
 
 /* Directory to maintain homes under. */
 static char *opt_homedir = NULL;
+
+/* Command to set up the home. */
+static char *opt_setup = NULL;
 
 /* Directory to move deleted homes under. */
 static char *opt_trashdir = NULL;
@@ -231,6 +236,19 @@ static void make_home(void *t)
 
 	if (0 != chown(path, uid, gid))
 		error(0, errno, "%s (chown %lu:%lu)", path, uid, gid);
+
+	if (opt_setup) {
+		pid_t pid;
+		char *uidstr = talloc_asprintf(t, "%lu", uid);
+		char *argv[] = {opt_setup, uidstr, path, NULL};
+
+		int r = posix_spawn(&pid, opt_setup, NULL, NULL, argv, environ);
+
+		if (-1 == r)
+			error(1, errno, "%s", opt_setup);
+
+		return;
+	}
 }
 
 static void trash_home(void *t)
@@ -529,6 +547,16 @@ int main(int argc, char **argv)
 					talloc_free(opt_homedir);
 
 				opt_homedir = talloc_strdup(t, optarg);
+				break;
+
+			case 's':
+				if (0 == strcmp(optarg, ""))
+					error(1, 0, "Empty --setup given.");
+
+				if (opt_setup)
+					talloc_free(opt_setup);
+
+				opt_setup = talloc_strdup(t, optarg);
 				break;
 
 			case 'L':
