@@ -1,5 +1,5 @@
 #!/bin/bash -e
 
-touch "${2}/${1}.txt"
+echo "${1}" >"${2}/${1}.txt"
 
 # EOF
